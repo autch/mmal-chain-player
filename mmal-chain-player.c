@@ -44,8 +44,10 @@ MMAL_BOOL_T chain_player_eos_callback(struct mmal_player_pipeline* pipeline, voi
     if((ctx->loop > 0 && --ctx->current_iter > 0) || ctx->loop == -1) {
         // continue with current mov
         next_uri = ctx->av[ctx->ai];
-        mmal_player_set_new_uri(pipeline, next_uri);
-        return MMAL_TRUE;
+        if(mmal_player_set_new_uri(pipeline, next_uri) == MMAL_SUCCESS)
+            return MMAL_TRUE;
+        else
+            return MMAL_FALSE;
     } else {
         // proceed to next mov
         if(ctx->av[ctx->ai + 1] == NULL || ctx->ai + 1 > ctx->ac) {
@@ -53,13 +55,14 @@ MMAL_BOOL_T chain_player_eos_callback(struct mmal_player_pipeline* pipeline, voi
                 ctx->ai = optind - 1;
                 // fall thru
             } else {
-                fprintf(stderr, "Exiting\n");
+//                fprintf(stderr, "Exiting\n");
                 return MMAL_FALSE;
             }
         }
 
         next_uri = ctx->av[++ctx->ai];
-        mmal_player_set_new_uri(pipeline, next_uri);
+        if(mmal_player_set_new_uri(pipeline, next_uri) != MMAL_SUCCESS)
+            return MMAL_FALSE;
         if(ctx->loop > 0)
             ctx->current_iter = ctx->loop;
         return MMAL_TRUE;
@@ -90,6 +93,16 @@ MMAL_STATUS_T make_player(struct player_context* ctx, char* uri)
     return MMAL_SUCCESS;
 }
 
+int usage(int ac, char** av)
+{
+    printf("Usage: %s [-r DEGREE] [-l [TIMES]] [-L] FILES...\n", *av);
+    printf("\t-r DEGREE\tRotate DEGREEs clockwise\n");
+    printf("\t-l [TIMES]\tRepeat each file by TIMES, -1 indicates infinitely\n");
+    printf("\t-L\t\tCycle files\n");
+    printf("\tFILES\t\tAny movie files what mmal_container accepts\n");
+
+    return -1;
+}
 
 int main(int ac, char **av)
 {
@@ -115,14 +128,12 @@ int main(int ac, char **av)
                 break;
             case '?':
             default:
-                fprintf(stderr, "Usage: chain_player [-r ROTATE] [-l [TIMES]] files...\n");
-                return -1;
+                return usage(ac, av);
         }
     }
 
     if (optind == ac) {
-        fprintf(stderr, "Usage: chain_player [-r ROTATE] files...\n");
-        return 1;
+        return usage(ac, av);
     }
 
     context.ac = ac;
@@ -139,7 +150,10 @@ int main(int ac, char **av)
 
     blank_background_start(&context.bb, 64, screen_width, screen_height);
 
-    make_player(&context, context.av[context.ai]);
+    status = make_player(&context, context.av[context.ai]);
+    if(status != MMAL_SUCCESS) {
+        goto error;
+    }
     mmal_player_start(&context.player);
 
     while(1) {
@@ -152,19 +166,21 @@ int main(int ac, char **av)
             break;
 
         if(exit_reason == mmal_player_EOS) {
-            fprintf(stderr, "exit reason: EOS received\n");
+//            fprintf(stderr, "exit reason: EOS received\n");
             break;
         }
     }
     mmal_player_stop(&context.player);
     mmal_player_join(&context.player);
 
+error:
     blank_background_stop(&context.bb);
 
-error:
     vcos_semaphore_delete(&context.sem_event);
 
     mmal_player_destroy(&context.player);
+
+    bcm_host_deinit();
 
     return 0;
 }

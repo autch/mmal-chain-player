@@ -256,6 +256,10 @@ MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const ch
 
         // recreate components
         status = build_components(ctx, next_uri);
+        if(status != MMAL_SUCCESS) {
+            ctx->pipeline_status = status;
+            return status;
+        }
 
         mmal_component_enable(ctx->container_reader);
         mmal_component_enable(ctx->scheduler);
@@ -322,7 +326,7 @@ MMAL_STATUS_T conn_pump_for_container_reader(struct mmal_player_pipeline* ctx, M
     /* Send any queued buffer to the next component */
     while((buffer = mmal_queue_get(connection->queue)) != NULL) {
         if(ctx->after_seek) {
-            fprintf(stderr, "set first-after-seek flag\n");
+//            fprintf(stderr, "set first-after-seek flag\n");
             buffer->flags |= MMAL_BUFFER_HEADER_FLAG_DISCONTINUITY;
             buffer->flags |= MMAL_BUFFER_HEADER_FLAG_CONFIG;
             ctx->after_seek = MMAL_FALSE;
@@ -391,14 +395,21 @@ error:
     if(ctx->exit_callback)
         ctx->exit_callback(ctx, ctx->userdata);
 
-    status = mmal_connection_disable(ctx->reader_to_decoder);
-    status = mmal_connection_disable(ctx->decoder_to_scheduler);
-    status = mmal_connection_disable(ctx->scheduler_to_renderer);
+    if(ctx->reader_to_decoder != NULL)
+        status = mmal_connection_disable(ctx->reader_to_decoder);
+    if(ctx->decoder_to_scheduler != NULL)
+        status = mmal_connection_disable(ctx->decoder_to_scheduler);
+    if(ctx->scheduler_to_renderer != NULL)
+        status = mmal_connection_disable(ctx->scheduler_to_renderer);
 
-    mmal_component_disable(ctx->video_renderer);
-    mmal_component_disable(ctx->scheduler);
-    mmal_component_disable(ctx->video_decoder);
-    mmal_component_disable(ctx->container_reader);
+    if(ctx->video_renderer != NULL)
+        mmal_component_disable(ctx->video_renderer);
+    if(ctx->scheduler != NULL)
+        mmal_component_disable(ctx->scheduler);
+    if(ctx->video_decoder != NULL)
+        mmal_component_disable(ctx->video_decoder);
+    if(ctx->container_reader != NULL)
+        mmal_component_disable(ctx->container_reader);
 
     return NULL;
 }
