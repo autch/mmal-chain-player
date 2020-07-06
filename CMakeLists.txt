@@ -19,22 +19,21 @@ find_package(Threads REQUIRED)
 
 pkg_check_modules(BCM_HOST REQUIRED bcm_host)
 pkg_check_modules(MMAL REQUIRED mmal)
-pkg_check_modules(BRCMGLESV2 REQUIRED brcmglesv2)
-pkg_check_modules(BRCMEGL REQUIRED brcmegl)
 
 include_directories(
         ${BCM_HOST_INCLUDE_DIRS}
-        ${BRCMGLESV2_INCLUDE_DIRS}
-        ${BRCMEGL_INCLUDE_DIRS}
         ${MMAL_INCLUDE_DIRS}
 )
 
 link_directories(
         ${BCM_HOST_LIBRARY_DIRS}
-        ${BRCMGLESV2_LIBRARY_DIRS}
-        ${BRCMEGL_LIBRARY_DIRS}
         ${MMAL_LIBRARY_DIRS}
 )
+
+option(SEAMLESS_LOOP "enable smooth looping trial" OFF)
+if(SEAMLESS_LOOP)
+    add_definitions(-DSEAMLESS_LOOP)
+endif(SEAMLESS_LOOP)
 
 add_definitions(
 )
@@ -43,11 +42,10 @@ add_compile_options(
         -Wall
 )
 
-set(CMAKE_C_FLAGS_DEBUG "-g -O0")
+set(CMAKE_C_FLAGS_DEBUG "-g -O3")
 set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
 
 SET(COMPILE_DEFINITIONS -Werror -Wall)
-
 
 add_executable(mmal-chain-player
     mmal-chain-player.c
@@ -57,8 +55,6 @@ add_executable(mmal-chain-player
 
 target_link_libraries(mmal-chain-player
     ${BCM_HOST_LIBRARIES}
-    ${BRCMGLESV2_LIBRARIES}
-    ${BRCMEGL_LIBRARIES}
     ${MMAL_LIBRARIES}
     Threads::Threads
 )

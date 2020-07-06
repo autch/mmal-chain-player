@@ -203,7 +203,7 @@ MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const ch
 
     mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_ACTIVE, MMAL_FALSE);
 
-#ifdef SEAMLESS_SEEK                    // unstable
+#ifdef SEAMLESS_LOOP                    // unstable
     if(strcmp(ctx->uri, next_uri) == 0)
     {
         mmal_connection_disable(ctx->reader_to_decoder); mmal_connection_destroy(ctx->reader_to_decoder);

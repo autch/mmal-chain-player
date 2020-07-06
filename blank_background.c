@@ -1,135 +1,98 @@
 #include "blank_background.h"
-#include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
-// code stolen from hello_videocube/triangle.c
+#include "interface/mmal/util/mmal_util_params.h"
+#include "interface/mmal/util/mmal_util.h"
+#include "interface/mmal/util/mmal_default_components.h"
 
-static const EGLint attribute_list[] =
+static void callback_vr_input(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
-    EGL_RED_SIZE, 8,
-    EGL_GREEN_SIZE, 8,
-    EGL_BLUE_SIZE, 8,
-    EGL_ALPHA_SIZE, 8,
-    EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-    EGL_NONE
-};
+    mmal_buffer_header_release(buffer);
+}
 
-int blank_background_start(struct blank_background *context, int layer)
+int blank_background_start(struct blank_background *context, int layer, int width, int height)
 {
-    int32_t success = 0;
-    EGLBoolean result;
-    EGLint num_config;
-
-    DISPMANX_UPDATE_HANDLE_T dispman_update;
-    VC_RECT_T dst_rect;
-    VC_RECT_T src_rect;
-
-    EGLConfig config;
-
     if (context == NULL)
         return -1;
 
     memset(context, 0, sizeof(struct blank_background));
 
     context->layer = layer;
+    context->screen_width = width;
+    context->screen_height = height;
 
-    context->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    assert(context->display != EGL_NO_DISPLAY);
+    mmal_component_create(MMAL_COMPONENT_DEFAULT_VIDEO_RENDERER, &context->video_render);
 
-    // initialize the EGL display connection
-    result = eglInitialize(context->display, NULL, NULL);
-    assert(EGL_FALSE != result);
+    MMAL_PORT_T* input = context->video_render->input[0];
 
-    // get an appropriate EGL frame buffer configuration
-    result = eglChooseConfig(context->display, attribute_list, &config, 1, &num_config);
-    assert(EGL_FALSE != result);
+    input->format->encoding = MMAL_ENCODING_RGB24;
+    input->format->es->video.width  = VCOS_ALIGN_UP(context->screen_width,  32);
+    input->format->es->video.height = VCOS_ALIGN_UP(context->screen_height, 16);
+    input->format->es->video.crop.x = 0;
+    input->format->es->video.crop.y = 0;
+    input->format->es->video.crop.width  = context->screen_width;
+    input->format->es->video.crop.height = context->screen_height;
 
-    // create an EGL rendering context
-    context->context = eglCreateContext(context->display, config, EGL_NO_CONTEXT, NULL);
-    assert(context->context != EGL_NO_CONTEXT);
+    mmal_port_format_commit(input);
+    mmal_component_enable(context->video_render);
+    mmal_port_parameter_set_boolean(input, MMAL_PARAMETER_ZERO_COPY, MMAL_TRUE);
 
-    // create an EGL window surface
-    success = graphics_get_display_size(0 /* LCD */, &context->screen_width, &context->screen_height);
-    assert(success >= 0);
+    input->buffer_size = input->buffer_size_recommended;
+    input->buffer_num = input->buffer_num_recommended;
+    if (input->buffer_num < 2)
+        input->buffer_num = 2;
 
-    dst_rect.x = 0;
-    dst_rect.y = 0;
-    dst_rect.width = context->screen_width;
-    dst_rect.height = context->screen_height;
+    context->pool = mmal_port_pool_create(input, input->buffer_num, input->buffer_size);
+    if (!context->pool) {
+        fprintf(stderr, "Oops, ,pool alloc failed\n");
+        return -1;
+    }
 
-    src_rect.x = 0;
-    src_rect.y = 0;
-    src_rect.width = context->screen_width << 16;
-    src_rect.height = context->screen_height << 16;
+    {
+        MMAL_DISPLAYREGION_T param;
+        param.hdr.id = MMAL_PARAMETER_DISPLAYREGION;
+        param.hdr.size = sizeof(MMAL_DISPLAYREGION_T);
 
-    context->dispman_display = vc_dispmanx_display_open(0 /* LCD */);
-    dispman_update = vc_dispmanx_update_start(0);
+        param.set = MMAL_DISPLAY_SET_LAYER;
+        param.layer = layer;    //On top of most things
 
-    context->dispman_element = vc_dispmanx_element_add(dispman_update, context->dispman_display,
-                                                       layer, &dst_rect, 0 /*src*/,
-                                                       &src_rect, DISPMANX_PROTECTION_NONE,
-                                                       NULL /*alpha*/, NULL /*clamp*/,
-                                                       DISPMANX_NO_ROTATE /*transform*/);
+        param.set |= MMAL_DISPLAY_SET_ALPHA;
+        param.alpha = 255;    //0 = transparent, 255 = opaque
 
-    context->native_window.element = context->dispman_element;
-    context->native_window.width = context->screen_width;
-    context->native_window.height = context->screen_height;
-    vc_dispmanx_update_submit_sync(dispman_update);
+        param.set |= (MMAL_DISPLAY_SET_DEST_RECT | MMAL_DISPLAY_SET_FULLSCREEN);
+        param.fullscreen = 0;
+        param.dest_rect.x = 0;
+        param.dest_rect.y = 0;
+        param.dest_rect.width = context->screen_width;
+        param.dest_rect.height = context->screen_height;
+        mmal_port_parameter_set(input, &param.hdr);
+    }
 
-    context->surface = eglCreateWindowSurface(context->display, config, &context->native_window, NULL);
-    assert(context->surface != EGL_NO_SURFACE);
+    mmal_port_enable(input, callback_vr_input);
 
-    // connect the context to the surface
-    result = eglMakeCurrent(context->display, context->surface, context->surface, context->context);
-    assert(EGL_FALSE != result);
+    MMAL_BUFFER_HEADER_T* buffer = mmal_queue_wait(context->pool->queue);
 
-    // Set background color and clear buffers
-    glClearColor(0.f, 0.f, 0.f, 1.f);
+    // Write something into the buffer.
+    memset(buffer->data, 0, buffer->alloc_size);
 
-    // Enable back face culling.
-    glEnable(GL_CULL_FACE);
-    glMatrixMode(GL_MODELVIEW);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    eglSwapBuffers(context->display, context->surface);
+    buffer->length = buffer->alloc_size;
+    mmal_port_send_buffer(input, buffer);
 
     return 0;
 }
 
 int blank_background_stop(struct blank_background *context)
 {
-    DISPMANX_UPDATE_HANDLE_T dispman_update;
-    int s;
-
-    if (context->display != NULL && context->surface != NULL) {
-        // clear screen
-        glClear(GL_COLOR_BUFFER_BIT);
-        eglSwapBuffers(context->display, context->surface);
-    }
-
-    if (context->surface != NULL) {
-        eglDestroySurface(context->display, context->surface);
-        context->surface = NULL;
-    }
-
-    if (context->dispman_element && context->dispman_display) {
-        dispman_update = vc_dispmanx_update_start(0);
-        s = vc_dispmanx_element_remove(dispman_update, context->dispman_element);
-        assert(s == 0);
-        vc_dispmanx_update_submit_sync(dispman_update);
-        s = vc_dispmanx_display_close(context->dispman_display);
-        assert (s == 0);
-        context->dispman_display = 0;
-        context->dispman_element = 0;
-    }
-
-    if (context->context != NULL && context->display != NULL) {
-        // Release OpenGL resources
-        eglMakeCurrent(context->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-        eglDestroyContext(context->display, context->context);
-        eglTerminate(context->display);
-        context->context = NULL;
-        context->display = NULL;
+    if(context->video_render != NULL) {
+        mmal_port_disable(context->video_render->input[0]);
+        if(context->pool != NULL) {
+            mmal_port_pool_destroy(context->video_render->input[0], context->pool);
+            context->pool = NULL;
+        }
+        mmal_component_disable(context->video_render);
+        mmal_component_destroy(context->video_render);
+        context->video_render = NULL;
     }
 
     return 0;

@@ -137,7 +137,10 @@ int main(int ac, char **av)
 
     context.current_iter = context.loop;
 
-    blank_background_start(&context.bb, 64);
+    uint32_t screen_width, screen_height;
+    graphics_get_display_size(0 /* LCD */, &screen_width, &screen_height);
+
+    blank_background_start(&context.bb, 64, screen_width, screen_height);
 
     make_player(&context, context.av[context.ai]);
     mmal_player_start(&context.player);
