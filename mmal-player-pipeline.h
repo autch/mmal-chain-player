@@ -53,7 +53,7 @@ struct mmal_player_pipeline
 
 MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const char* next_uri);
 
-MMAL_STATUS_T mmal_player_init(struct mmal_player_pipeline* ctx, const char* uri);
+MMAL_STATUS_T mmal_player_init(struct mmal_player_pipeline* ctx, const char* uri, int rotation, int layer);
 MMAL_STATUS_T mmal_player_set_eos_callback(struct mmal_player_pipeline* ctx, pipeline_eos_callback cb, void* user);
 MMAL_STATUS_T mmal_player_set_exit_callback(struct mmal_player_pipeline* ctx, pipeline_exit_callback cb, void* user);
 

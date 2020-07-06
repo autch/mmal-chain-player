@@ -201,6 +201,7 @@ MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const ch
 {
     MMAL_STATUS_T status = MMAL_SUCCESS;
 
+    status = mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_REFERENCE, MMAL_FALSE);
     mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_ACTIVE, MMAL_FALSE);
 
 #ifdef SEAMLESS_LOOP                    // unstable
@@ -226,10 +227,6 @@ MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const ch
             mmal_component_enable(ctx->video_renderer);
         }
         mmal_connection_enable(ctx->reader_to_decoder);
-
-        ctx->eos = MMAL_FALSE;
-
-        mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_ACTIVE, MMAL_TRUE);
     }
     else
 #endif
@@ -269,10 +266,11 @@ MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const ch
         mmal_connection_enable(ctx->decoder_to_scheduler);
         mmal_connection_enable(ctx->scheduler_to_renderer);
 
-        ctx->eos = MMAL_FALSE;
-
-        mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_ACTIVE, MMAL_TRUE);
     }
+    ctx->eos = MMAL_FALSE;
+
+    status = mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_REFERENCE, MMAL_TRUE);
+    mmal_port_parameter_set_boolean(ctx->scheduler->clock[0], MMAL_PARAMETER_CLOCK_ACTIVE, MMAL_TRUE);
     return status;
 }
 
@@ -405,13 +403,14 @@ error:
     return NULL;
 }
 
-MMAL_STATUS_T mmal_player_init(struct mmal_player_pipeline* ctx, const char* uri)
+MMAL_STATUS_T mmal_player_init(struct mmal_player_pipeline* ctx, const char* uri, int rotation, int layer)
 {
     MMAL_STATUS_T status;
 
     memset(ctx, 0, sizeof(struct mmal_player_pipeline));
 
-    ctx->layer = 128;
+    ctx->layer = layer;
+    ctx->rotation = rotation;
 
     vcos_semaphore_create(&ctx->sem_ready, "mmal_player:ready", 1);
 

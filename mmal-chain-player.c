@@ -79,13 +79,10 @@ MMAL_STATUS_T make_player(struct player_context* ctx, char* uri)
 {
     MMAL_STATUS_T status;
 
-    status = mmal_player_init(&ctx->player, uri);
+    status = mmal_player_init(&ctx->player, uri, ctx->rotation, 128);
     if(status != MMAL_SUCCESS) {
         return status;
     }
-
-    ctx->player.rotation = ctx->rotation;
-    ctx->player.layer = 128;
 
     mmal_player_set_eos_callback(&ctx->player, chain_player_eos_callback, ctx);
     mmal_player_set_exit_callback(&ctx->player, chain_player_exit_callback, ctx);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(mmal-chain-player C CXX)
+project(mmal-chain-player C)
 
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
