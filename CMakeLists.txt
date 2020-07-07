@@ -32,6 +32,7 @@ link_directories(
 
 option(SEAMLESS_LOOP "enable smooth looping trial" OFF)
 if(SEAMLESS_LOOP)
+    message("Enabling experimental seamless looping")
     add_definitions(-DSEAMLESS_LOOP)
 endif(SEAMLESS_LOOP)
 

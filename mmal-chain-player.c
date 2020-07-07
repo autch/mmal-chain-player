@@ -21,7 +21,9 @@ struct player_context
     int ac, ai;
 
     struct blank_background bb;
-    struct mmal_player_pipeline player;
+    struct mmal_player_pipeline* player;
+    struct mmal_player_pipeline* old_player;
+
 
     VCOS_SEMAPHORE_T sem_event;
 };
@@ -36,6 +38,9 @@ static const struct option long_options[] =
     {NULL, 0,                       NULL, 0}
 };
 
+struct mmal_player_pipeline* make_player(struct player_context* ctx, char* uri);
+
+
 MMAL_BOOL_T chain_player_eos_callback(struct mmal_player_pipeline* pipeline, void* user)
 {
     struct player_context* ctx = user;
@@ -44,10 +49,6 @@ MMAL_BOOL_T chain_player_eos_callback(struct mmal_player_pipeline* pipeline, voi
     if((ctx->loop > 0 && --ctx->current_iter > 0) || ctx->loop == -1) {
         // continue with current mov
         next_uri = ctx->av[ctx->ai];
-        if(mmal_player_set_new_uri(pipeline, next_uri) == MMAL_SUCCESS)
-            return MMAL_TRUE;
-        else
-            return MMAL_FALSE;
     } else {
         // proceed to next mov
         if(ctx->av[ctx->ai + 1] == NULL || ctx->ai + 1 > ctx->ac) {
@@ -55,18 +56,38 @@ MMAL_BOOL_T chain_player_eos_callback(struct mmal_player_pipeline* pipeline, voi
                 ctx->ai = optind - 1;
                 // fall thru
             } else {
-//                fprintf(stderr, "Exiting\n");
+                fprintf(stderr, "Exiting\n");
                 return MMAL_FALSE;
             }
         }
 
         next_uri = ctx->av[++ctx->ai];
-        if(mmal_player_set_new_uri(pipeline, next_uri) != MMAL_SUCCESS)
-            return MMAL_FALSE;
         if(ctx->loop > 0)
             ctx->current_iter = ctx->loop;
-        return MMAL_TRUE;
     }
+
+    if(ctx->old_player != NULL) {
+        mmal_player_join(ctx->old_player);
+        mmal_player_destroy(ctx->old_player);
+        ctx->old_player = NULL;
+    }
+
+    mmal_player_set_exit_callback(pipeline, NULL, ctx);
+    mmal_player_set_eos_callback(pipeline, NULL, ctx);
+
+    struct mmal_player_pipeline* new_player = make_player(ctx, next_uri);
+    if(new_player == NULL) {
+        fprintf(stderr, "unable to recreate player\n");
+        return MMAL_FALSE;
+    }
+
+    ctx->player = new_player;
+    ctx->old_player = pipeline;
+
+    mmal_player_stop(pipeline);
+    mmal_player_start(new_player);
+
+    return MMAL_TRUE;
 }
 
 void chain_player_exit_callback(struct mmal_player_pipeline* pipeline, void* user)
@@ -77,20 +98,20 @@ void chain_player_exit_callback(struct mmal_player_pipeline* pipeline, void* use
     vcos_semaphore_post(&ctx->sem_event);
 }
 
-
-MMAL_STATUS_T make_player(struct player_context* ctx, char* uri)
+struct mmal_player_pipeline* make_player(struct player_context* ctx, char* uri)
 {
+    struct mmal_player_pipeline* player;
     MMAL_STATUS_T status;
 
-    status = mmal_player_init(&ctx->player, uri, ctx->rotation, 128);
-    if(status != MMAL_SUCCESS) {
-        return status;
+    player = mmal_player_create(uri, ctx->rotation, 128);
+    if(player == NULL) {
+        return NULL;
     }
 
-    mmal_player_set_eos_callback(&ctx->player, chain_player_eos_callback, ctx);
-    mmal_player_set_exit_callback(&ctx->player, chain_player_exit_callback, ctx);
+    mmal_player_set_eos_callback(player, chain_player_eos_callback, ctx);
+    mmal_player_set_exit_callback(player, chain_player_exit_callback, ctx);
 
-    return MMAL_SUCCESS;
+    return player;
 }
 
 int usage(int ac, char** av)
@@ -150,11 +171,11 @@ int main(int ac, char **av)
 
     blank_background_start(&context.bb, 64, screen_width, screen_height);
 
-    status = make_player(&context, context.av[context.ai]);
-    if(status != MMAL_SUCCESS) {
+    context.player = make_player(&context, context.av[context.ai]);
+    if(context.player == NULL) {
         goto error;
     }
-    mmal_player_start(&context.player);
+    mmal_player_start(context.player);
 
     while(1) {
         vcos_semaphore_wait(&context.sem_event);
@@ -162,23 +183,25 @@ int main(int ac, char **av)
         int exit_reason = context.reason;
         if(exit_reason == mmal_player_TERMINATED)
             break;
-        if(exit_reason == mmal_player_ERROR)
+        if(exit_reason == mmal_player_ERROR) {
+            fprintf(stderr, "exit reason: error\n");
             break;
+        }
 
         if(exit_reason == mmal_player_EOS) {
-//            fprintf(stderr, "exit reason: EOS received\n");
+            fprintf(stderr, "exit reason: EOS received\n");
             break;
         }
     }
-    mmal_player_stop(&context.player);
-    mmal_player_join(&context.player);
+    mmal_player_stop(context.player);
+    mmal_player_join(context.player);
 
 error:
     blank_background_stop(&context.bb);
 
     vcos_semaphore_delete(&context.sem_event);
 
-    mmal_player_destroy(&context.player);
+    mmal_player_destroy(context.player);
 
     bcm_host_deinit();
 

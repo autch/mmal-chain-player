@@ -2,10 +2,15 @@
 
 #include <stdio.h>
 
+#include "interface/mmal/util/mmal_util.h"
 #include "interface/mmal/util/mmal_util_params.h"
 #include "interface/mmal/util/mmal_default_components.h"
 
 #define CHECK_STATUS(status, msg) if (status != MMAL_SUCCESS) { fprintf(stderr, msg"\n"); goto error; }
+
+static MMAL_STATUS_T mmal_player_init(struct mmal_player_pipeline* ctx, const char* uri, int rotation, int layer);
+static void mmal_player_deinit(struct mmal_player_pipeline* ctx);
+
 
 static void control_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
@@ -15,6 +20,7 @@ static void control_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
     {
         case MMAL_EVENT_ERROR:
             ctx->pipeline_status = (*(MMAL_STATUS_T *) buffer->data);
+            fprintf(stderr, "%s: received error: %s\n", port->name, mmal_status_to_string(ctx->pipeline_status));
             break;
         case MMAL_EVENT_EOS:
             ctx->eos = MMAL_TRUE;
@@ -395,22 +401,6 @@ error:
     if(ctx->exit_callback)
         ctx->exit_callback(ctx, ctx->userdata);
 
-    if(ctx->reader_to_decoder != NULL)
-        status = mmal_connection_disable(ctx->reader_to_decoder);
-    if(ctx->decoder_to_scheduler != NULL)
-        status = mmal_connection_disable(ctx->decoder_to_scheduler);
-    if(ctx->scheduler_to_renderer != NULL)
-        status = mmal_connection_disable(ctx->scheduler_to_renderer);
-
-    if(ctx->video_renderer != NULL)
-        mmal_component_disable(ctx->video_renderer);
-    if(ctx->scheduler != NULL)
-        mmal_component_disable(ctx->scheduler);
-    if(ctx->video_decoder != NULL)
-        mmal_component_disable(ctx->video_decoder);
-    if(ctx->container_reader != NULL)
-        mmal_component_disable(ctx->container_reader);
-
     return NULL;
 }
 
@@ -474,8 +464,25 @@ void mmal_player_join(struct mmal_player_pipeline* ctx)
     vcos_thread_join(&ctx->main_loop_thread, &ret);
 }
 
-void mmal_player_destroy(struct mmal_player_pipeline* ctx)
+void mmal_player_deinit(struct mmal_player_pipeline* ctx)
 {
+    if(ctx->reader_to_decoder != NULL)
+        mmal_connection_disable(ctx->reader_to_decoder);
+    if(ctx->decoder_to_scheduler != NULL)
+        mmal_connection_disable(ctx->decoder_to_scheduler);
+    if(ctx->scheduler_to_renderer != NULL)
+        mmal_connection_disable(ctx->scheduler_to_renderer);
+
+    if(ctx->video_renderer != NULL)
+        mmal_component_disable(ctx->video_renderer);
+    if(ctx->scheduler != NULL)
+        mmal_component_disable(ctx->scheduler);
+    if(ctx->video_decoder != NULL)
+        mmal_component_disable(ctx->video_decoder);
+    if(ctx->container_reader != NULL)
+        mmal_component_disable(ctx->container_reader);
+
+
     if(ctx->scheduler_to_renderer != NULL)
         mmal_connection_destroy(ctx->scheduler_to_renderer);
     ctx->scheduler_to_renderer= NULL;
@@ -509,4 +516,24 @@ void mmal_player_destroy(struct mmal_player_pipeline* ctx)
         free(ctx->uri);
         ctx->uri = NULL;
     }
+}
+
+struct mmal_player_pipeline* mmal_player_create(const char* uri, int rotation, int layer)
+{
+    struct mmal_player_pipeline* p = calloc(1, sizeof(struct mmal_player_pipeline));
+    if(p == NULL)
+        return NULL;
+
+    mmal_player_init(p, uri, rotation, layer);
+
+    return p;
+}
+
+void mmal_player_destroy(struct mmal_player_pipeline* ctx)
+{
+    if(ctx == NULL)
+        return;
+
+    mmal_player_deinit(ctx);
+    free(ctx);
 }

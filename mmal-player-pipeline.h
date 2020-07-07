@@ -51,16 +51,17 @@ struct mmal_player_pipeline
     void* userdata;     // shared with eos_callback and exit_callback
 };
 
-MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const char* next_uri);
+struct mmal_player_pipeline* mmal_player_create(const char* uri, int rotation, int layer);
+void mmal_player_destroy(struct mmal_player_pipeline* ctx);
 
-MMAL_STATUS_T mmal_player_init(struct mmal_player_pipeline* ctx, const char* uri, int rotation, int layer);
 MMAL_STATUS_T mmal_player_set_eos_callback(struct mmal_player_pipeline* ctx, pipeline_eos_callback cb, void* user);
 MMAL_STATUS_T mmal_player_set_exit_callback(struct mmal_player_pipeline* ctx, pipeline_exit_callback cb, void* user);
+
+MMAL_STATUS_T mmal_player_set_new_uri(struct mmal_player_pipeline* ctx, const char* next_uri);
 
 MMAL_STATUS_T mmal_player_start(struct mmal_player_pipeline* ctx);
 void mmal_player_stop(struct mmal_player_pipeline* ctx);
 void mmal_player_join(struct mmal_player_pipeline* ctx);
 
-void mmal_player_destroy(struct mmal_player_pipeline* ctx);
 
 #endif //MMAL_CHAIN_PLAYER_MMAL_PLAYER_PIPELINE_H
